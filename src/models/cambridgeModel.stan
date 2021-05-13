@@ -92,6 +92,38 @@ transformed data {
   //Need to reverse this to convolve with daily_infections
   vector[maxL] pDeathAfterInfectionReversed = reverse(pDeathAfterInfection);
 
+  matrix[T,T] deathMatrix; //Matrix multiplication  (daily_possible_deaths = deathMatrix * daily_infections) faster than doing in a loop
+
+  {
+    row_vector[T] pDeathReversed_row = pDeathAfterInfectionReversed';
+    for (t in 1:T){
+      int tmpMaxL = maxL;
+      if (t <= maxL){
+        tmpMaxL = t;
+
+        row_vector[T] tmp;
+
+        tmp[1:t] = pDeathReversed_row[(maxL-t+1):maxL];
+        tmp[t+1:T] = rep_row_vector(0.0, T-t);
+
+        deathMatrix[t,] = tmp;
+      } else {
+        int gap = t - maxL;
+        row_vector[T] tmp;
+        tmp[1:gap] = rep_row_vector(0.0, gap);
+        tmp[(gap+1):(gap+maxL)] = pDeathReversed_row;
+        if (t < T){
+          tmp[t+1:T] = rep_row_vector(0.0, T-t);
+        }
+        deathMatrix[t,] = tmp;
+      }
+
+    }
+  }
+  if (debug){
+    print(deathMatrix);
+  }
+
 }
 parameters {
   real<lower=0, upper=1> initial_state_raw[2, n_age_groups, n_regions];
@@ -215,16 +247,7 @@ transformed parameters {
   {
     for (r in 1:n_regions){
       for (a in 1:n_age_groups){
-        for (t in 1:T){
-
-	        int tmpMaxL = maxL;
-          if (t < maxL){
-            tmpMaxL = t;
-          }
-          real cumulativePossibleDeaths = sum(pDeathAfterInfectionReversed[(maxL-tmpMaxL+1):maxL] .* daily_infections[a,r,(t-tmpMaxL+1):t]);
-
-          daily_deaths[a,r,t] = p[a] * cumulativePossibleDeaths;
-        }
+        daily_deaths[a,r] = p[a] * deathMatrix * daily_infections[a,r];
       }
     }
   }
