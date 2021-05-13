@@ -56,7 +56,7 @@ data {
   int<lower=1> n_age_groups;
 
   int<lower=1, upper = n_age_groups> over75Group; //Index of first group to include over 75s
-  int<lower=1> maxL; //Maximum days for infection -> deaths
+  int<lower=1> maxL; //Maximum timesteps for infection -> deaths
 
   int<lower=1> t_lock; //Lockdown time step
   int<lower=1> w_lock; //Lockdown week
@@ -89,6 +89,9 @@ transformed data {
 
   real delta_t = 0.5; //Timestep size (days)
 
+  //Need to reverse this to convolve with daily_infections
+  vector[maxL] pDeathAfterInfectionReversed = reverse(pDeathAfterInfection);
+
 }
 parameters {
   real<lower=0, upper=1> initial_state_raw[2, n_age_groups, n_regions];
@@ -120,8 +123,8 @@ transformed parameters {
 
   real<lower=0> dI;
 
-  real<lower=0> daily_deaths[n_age_groups, T, n_regions];
-  real<lower=0> daily_infections[n_age_groups, T, n_regions];
+  vector[T] daily_deaths[n_age_groups, n_regions];
+  vector[T] daily_infections[n_age_groups, n_regions];
 
   real state_estimate[n_disease_states+1, n_age_groups, T, n_regions];
 
@@ -202,7 +205,11 @@ transformed parameters {
   }
 
   //Daily infections stored in state_estimate during integration
-  daily_infections = state_estimate[6,:,:,:];
+  for (r in 1:n_regions){
+    for (a in 1:n_age_groups){
+      daily_infections[a,r] = to_vector(state_estimate[6,a,:,r]);
+    }
+  }
 
   //Daily deaths as lagged proportion of daily infections
   {
@@ -210,16 +217,13 @@ transformed parameters {
       for (a in 1:n_age_groups){
         for (t in 1:T){
 
-          real cumulativePossibleDeaths = 0;
 	        int tmpMaxL = maxL;
           if (t < maxL){
             tmpMaxL = t;
           }
-          for(l in 1:tmpMaxL){
-            cumulativePossibleDeaths += pDeathAfterInfection[l] * daily_infections[a, t-l+1, r];
-          }
+          real cumulativePossibleDeaths = sum(pDeathAfterInfectionReversed[(maxL-tmpMaxL+1):maxL] .* daily_infections[a,r,(t-tmpMaxL+1):t]);
 
-          daily_deaths[a,t,r] = p[a] * cumulativePossibleDeaths;
+          daily_deaths[a,r,t] = p[a] * cumulativePossibleDeaths;
         }
       }
     }
@@ -268,10 +272,11 @@ model {
   if (compute_likelihood == 1) {
     for (r in 1:n_regions){
       for (a in 1:n_age_groups){
-        for (t in 1:T){
-          //Deaths likelihood
-          target += neg_binomial_2_lpmf(deaths[r,a,t] | daily_deaths[a,t,r], phi_deaths);
 
+        //Deaths likelihood
+        target += neg_binomial_2_lpmf(deaths[r,a] | daily_deaths[a,r], phi_deaths);
+
+        for (t in 1:T){
           //Serum likelihood
           target += binomial_lpmf(positive_blood_tests[r,a,t] | n_blood_tests[r,a,t] , k_sens * (1 - state_estimate[1,a,t,r]/population[r,a]) + (1 - k_spec) * state_estimate[1,a,t,r]/population[r,a]);
         }

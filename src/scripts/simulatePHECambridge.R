@@ -90,10 +90,11 @@ generateSimulatedData <- function(
 
   maxL <- 100
 
-  pDeathAfterInfection <- sapply(seq(0,maxL-2), function(d){
-    pgamma(d+1,timeToDeathFromSymptomsShape, timeToDeathFromSymptomsRate)-pgamma(d,timeToDeathFromSymptomsShape, timeToDeathFromSymptomsRate)
+  pDeathAfterInfection <- sapply(seq(0,maxL-2,by=0.5), function(d){
+    pgamma(d+0.5,timeToDeathFromSymptomsShape, timeToDeathFromSymptomsRate)-pgamma(d,timeToDeathFromSymptomsShape, timeToDeathFromSymptomsRate)
   })
-  pDeathAfterInfection <- c(pDeathAfterInfection, 1 - sum(f))
+  pDeathAfterInfection <- c(pDeathAfterInfection, 1 - sum(pDeathAfterInfection))
+  maxL <- length(pDeathAfterInfection)
 
   #Draw from priors from model
   initial_state_raw <- array(0, dim = c(2, nAgeGroups, nRegions))
@@ -211,10 +212,10 @@ generateSimulatedData <- function(
 
         cumulativePossibleDeaths = 0
         tmpMaxL = maxL
-        if (t < maxL){
+        if (t < tmpMaxL){
           tmpMaxL = t
         }
-        cumulativePossibleDeaths <- sum(pDeathAfterInfection[1:tmpMaxL] * rev(daily_infections[a,seq(t-tmpMaxL+1,tmpMaxL),r]))
+        cumulativePossibleDeaths <- sum(rev(pDeathAfterInfection)[(maxL-tmpMaxL+1):maxL] * daily_infections[a,seq(t-tmpMaxL+1,t),r])
 
         daily_deaths[a,t,r] = ifr[a] * cumulativePossibleDeaths
       }
@@ -247,7 +248,7 @@ generateSimulatedData <- function(
     n_age_groups = nAgeGroups,
     over75Group = over75Group,
 
-    maxL = maxL,
+    maxL = length(pDeathAfterInfection),
 
     t_lock = tLock,
     w_lock = wLock,
@@ -267,7 +268,15 @@ generateSimulatedData <- function(
 
   #Return the ground truth values to compare against
   ground_truth = list(
-
+    state_estimate = state_estimate,
+    daily_infections = daily_infections,
+    daily_deaths = daily_deaths,
+    log_beta = log_beta,
+    b = b,
+    C_tilde = C_tilde,
+    contactMatrixMultipliers = contactMatrixMultipliers,
+    ifr = ifr,
+    pDeathAfterInfection = pDeathAfterInfection
   )
 
   list(stan_data = stan_data, ground_truth = ground_truth)
