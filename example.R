@@ -12,7 +12,7 @@ stanmodel <- cmdstanr::cmdstan_model(
   file.path(getwd(), "src/models/cambridgeModel.stan"),
   include_paths = file.path(getwd(), "src/models"),
   cpp_options = list(
-    USER_HEADER = file.path(getwd(), "src/models/dominant_eigenvalue_external.cpp"
+    USER_HEADER = file.path(getwd(), "src/models/dominant_eigenvalue_external.cpp")
   ),
   stanc_options = list("allow-undefined")
 )
